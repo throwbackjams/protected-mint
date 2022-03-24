@@ -190,8 +190,10 @@ pub mod protected_mint {
         let expected_creator = config_account.creator_address;
 
         //Check that the updateAuthority field on the NFT metadata matches the creator of the ProtectionConfig Account
+        //Assumes that the creator address in the second position is the main address (since the first address is the Candy Machine per Metaplex Docs)
+        //Note: In a production version, better to check for "verified" creator and ensure projects verify their collections
         assert_eq!(
-            full_metadata_clone.update_authority,
+            full_metadata_clone.data.creators.as_ref().unwrap()[1].address,
             expected_creator
         );
 
