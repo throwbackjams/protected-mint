@@ -25,7 +25,7 @@ pub mod protected_mint {
         config_account.max_quantity = max_quantity;
         
         //Check that the provided threshold level does not exceed the total possible proceeds
-        if threshold_level > sale_price * max_quantity {
+        if threshold_level > max_quantity.checked_mul(sale_price).unwrap() {
             return Err(ErrorCode::ThresholdTooGreat.into());
         }
         
