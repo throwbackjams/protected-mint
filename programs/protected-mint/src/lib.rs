@@ -1,5 +1,5 @@
 use anchor_lang::prelude::*;
-use anchor_spl::token::{TokenAccount, Mint};
+use anchor_spl::token::{self, TokenAccount, Token, Mint, Burn};
 use mpl_token_metadata;
 use mpl_token_metadata::state::{Metadata, PREFIX, EDITION};
 
@@ -187,18 +187,57 @@ pub mod protected_mint {
 
         let full_metadata_clone = metadata_full_account.clone();
 
-        let expected_creator = &ctx.accounts.config_account.creator_address;
+        let expected_creator = config_account.creator_address;
 
         //Check that the updateAuthority field on the NFT metadata matches the creator of the ProtectionConfig Account
         assert_eq!(
             full_metadata_clone.update_authority,
-            *expected_creator
+            expected_creator
         );
 
-        //TODO: Signer burns the NFT (or sends it?) - probably use anchor_spl token burn?
+        //User signer burns the NFT?
+        let nft_mint = &ctx.accounts.nft_mint;
         
-        //TODO: Derive config account PDA and transfer sales_price to the user signer
+        let burn_cpi_accounts = Burn {
+            to: nft_token_account.to_account_info().clone(),
+            mint: nft_mint.to_account_info().clone(),
+            authority: user.clone(),
+        };
+
+        let token_program = ctx.accounts.token_program.to_account_info();
+
+        let burn_cpi_context = CpiContext::new(token_program, burn_cpi_accounts);
+
+        token::burn(
+            burn_cpi_context,
+            1 as u64,
+        )?;
         
+        //Derive config account PDA and transfer sales_price to the user signer
+
+        let (_config_account, config_account_bump) =
+            Pubkey::find_program_address(&[b"config-seed".as_ref(), expected_creator.as_ref()], ctx.program_id);
+
+        let authority_seeds = &[
+            b"config-seed".as_ref(), 
+            expected_creator.as_ref(), 
+            &[config_account_bump]];
+        
+        let sales_price = config_account.sale_price;
+
+        anchor_lang::solana_program::program::invoke_signed(
+            &anchor_lang::solana_program::system_instruction::transfer(
+                config_account.to_account_info().key,
+                ctx.accounts.user.key,
+                sales_price,
+            ),
+            &[
+                config_account.to_account_info().clone(),
+                ctx.accounts.user.clone(),
+            ],
+            &[authority_seeds],
+
+        )?;
 
         Ok(())
     }
@@ -250,6 +289,7 @@ pub struct RequestRefund<'info>{
     #[account(address = mpl_token_metadata::ID)]
     /// CHECK: Already checked for address match?
     pub token_metadata_program: AccountInfo<'info>,
+    pub token_program: Program<'info, Token>,
     pub clock: Sysvar<'info, Clock>,
     pub system_program: Program<'info, System>,
 }
