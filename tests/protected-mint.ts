@@ -38,5 +38,4 @@ describe("protected-mint", () => {
     //TODO
     assert.ok(true == false)
   });
-
 });
