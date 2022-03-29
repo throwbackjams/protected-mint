@@ -25,6 +25,7 @@ pub mod protected_mint {
         config_account.sale_price = sale_price;
         config_account.max_quantity = max_quantity;
         config_account.end_sales_time = end_sales_time;
+        config_account.bump = *ctx.bumps.get("config_account").unwrap();
         
         //Check that the provided threshold level does not exceed the total possible proceeds
         if threshold_level > max_quantity.checked_mul(sale_price).unwrap() {
@@ -65,52 +66,8 @@ pub mod protected_mint {
 
         let creator_account = &ctx.accounts.creator_address;
 
-        let (_config_account, config_account_bump) =
-            Pubkey::find_program_address(&[b"config-seed".as_ref(), ctx.accounts.creator_address.key.as_ref()], ctx.program_id);
-
-        config_account.bump = config_account_bump;
-
-        let authority_seeds = &[
-            b"config-seed".as_ref(), 
-            ctx.accounts.creator_address.key.as_ref(), 
-            &[config_account_bump]];
-
-        anchor_lang::solana_program::program::invoke_signed(
-            &anchor_lang::solana_program::system_instruction::transfer(
-                config_account.to_account_info().key,
-                &config_account.creator_address,
-                lamports_to_transfer,
-            ),
-            &[
-                config_account.to_account_info().clone(),
-                creator_account.to_account_info().clone(),
-            ],
-            &[authority_seeds],
-
-        )?;
-
-        //Question: Is the PDA paying for the transfer transaction fee? Does this need to be accounted for in the avilable_lamports / lamports_to_transfer vars?
-
-        // Note: Tried to use new Anchor wrappers functions for system program cpi calls but says Transfer not found in anchor_lang::system_program
-        // let cpi_accounts = anchor_lang::system_program::Transfer{
-        //     from: config_account.to_account_info(),
-        //     to: config_account.creator_address.to_account_info(),
-        // };
-
-        // let cpi_context = CpiContext::new(system_program.to_account_info(), cpi_accounts);
-        // anchor_lang::system_program::transfer(cpi_context.with_signer(&[authority_seeds]), lamports_to_transfer);
-
-        // fn into_transfer_context(
-        //     &self,
-        // ) -> CpiContext<'_, '_, '_, 'info, Transfer<'info>> {
-        //     let cpi_accounts = Transfer {
-        //         from: config_account.to_account_info().clone(),
-        //         to: config_account.creator_address.to_account_info().clone(),
-        //     };
-        //     let cpi_context = CpiContext::new(system_program.to_account_info(), cpi_accounts);
-            
-            
-        // }
+        **config_account.to_account_info().try_borrow_mut_lamports()? -= lamports_to_transfer;
+        **creator_account.to_account_info().try_borrow_mut_lamports()? += lamports_to_transfer;
 
         config_account.threshold_met = true;
 
@@ -275,6 +232,7 @@ pub struct ReleaseFunds<'info>{
     #[account(mut)]
     pub creator_address: Signer<'info>,
     #[account(
+        mut,
         has_one = creator_address,
         seeds = [
             b"config-seed".as_ref(),

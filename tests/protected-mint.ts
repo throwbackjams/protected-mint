@@ -31,7 +31,6 @@ describe("protected-mint", () => {
 
   it("Config account initialized", async () => {
     console.log("Testing config account initialized...");
-    //TODO
     await provider.connection.confirmTransaction(
       await provider.connection.requestAirdrop(creator.publicKey, 10*LAMPORTS_PER_SOL),
       "confirmed"
@@ -81,10 +80,62 @@ describe("protected-mint", () => {
     console.log("Threshold met:", configAccountState.thresholdMet);
     assert.ok(configAccountState.endSalesTime.toNumber() == endSalesTime.toNumber());
     console.log("End sales time state:", configAccountState.endSalesTime.toNumber());
+    console.log("Bump: ", configAccountState.bump);
   });
 
   it("Releases funds to creator upon meeting threshold", async() => {
     //TODO
+    console.log("Testing release funds to creator...");
+    const creatorBalanceBefore = await provider.connection.getBalance(creator.publicKey) / LAMPORTS_PER_SOL
+    console.log("Creator SOL balance before", creatorBalanceBefore);
+    
+    const [configAccountPDA, _] = await PublicKey.findProgramAddress(
+      [
+        anchor.utils.bytes.utf8.encode("config-seed"),
+        creator.publicKey.toBuffer(),
+      ],
+      program.programId
+      );
+    
+    const configAccountBalanceBefore = await provider.connection.getBalance(configAccountPDA) / LAMPORTS_PER_SOL;
+    console.log("Config Account SOL balance before", configAccountBalanceBefore);
+    
+    await provider.connection.confirmTransaction(
+      await provider.connection.requestAirdrop(configAccountPDA, 2000*LAMPORTS_PER_SOL),
+      "confirmed"
+    );
+
+    const configAccountBalanceSimulatedMetThreshold = await provider.connection.getBalance(configAccountPDA) / LAMPORTS_PER_SOL;
+    console.log("ConfigAccount post airdrop to simulate SOL receipts from Candy Machine", configAccountBalanceSimulatedMetThreshold);
+    
+    console.log("time before timeout", Date.now() / 1000);
+    await new Promise(r => setTimeout(r, 11000));
+    console.log("time now", Date.now() / 1000);
+
+    await program.rpc.releaseFunds(
+      {
+        accounts: {
+          creatorAddress: creator.publicKey,
+          configAccount: configAccountPDA,
+          clock: anchor.web3.SYSVAR_CLOCK_PUBKEY,
+          systemProgram: anchor.web3.SystemProgram.programId,
+      },
+      signers: [creator]
+    });
+    
+    const creatorBalanceAfter = await provider.connection.getBalance(creator.publicKey) / LAMPORTS_PER_SOL;
+    console.log("Creator SOL balance after", creatorBalanceAfter);
+    const configAccountBalanceAfter = await provider.connection.getBalance(configAccountPDA) / LAMPORTS_PER_SOL;
+    console.log("Config Account SOL balance after", configAccountBalanceAfter);
+    console.log("ConfigAccount Balance Change", configAccountBalanceSimulatedMetThreshold - configAccountBalanceBefore);
+    console.log("Creator Balance Change", creatorBalanceAfter - creatorBalanceBefore);
+
+    assert.ok(creatorBalanceAfter - creatorBalanceBefore == configAccountBalanceSimulatedMetThreshold - configAccountBalanceBefore);
+    assert.ok(creatorBalanceAfter - creatorBalanceBefore == 2000);
+
+    const configAccountState = await program.account.protectionConfig.fetch(configAccountPDA);
+    assert.ok(configAccountState.thresholdMet == true);
+
   });
 
   it("Processes refund for verified holder if threshold not met", async() => {
