@@ -19,10 +19,12 @@ pub mod protected_mint {
     ) -> Result<()> {
         let config_account = &mut ctx.accounts.config_account;
 
+        msg!("Setting config account parameters");
         //Set the parameters of the Config account
         config_account.creator_address = *ctx.accounts.creator.key;
         config_account.sale_price = sale_price;
         config_account.max_quantity = max_quantity;
+        config_account.end_sales_time = end_sales_time;
         
         //Check that the provided threshold level does not exceed the total possible proceeds
         if threshold_level > max_quantity.checked_mul(sale_price).unwrap() {
@@ -51,7 +53,7 @@ pub mod protected_mint {
 
         //Release available lamports less rent exemption (in case more mints occur after indicated time)
         //Note: can also config such that end_sales_time == candy machine's end time. If so, then can transfer all lamports and close account below
-        let space = 32 + 8 + 8 + 8 + 1 + 8 as usize; //Config Account: space = creator pubkey + sale price + quantity + threshold level + threshold bool + end sales time
+        let space = 8 + 32 + 8 + 8 + 8 + 1 + 8 + 1 as usize; //Config Account: space = discriminator + creator pubkey + sale price + quantity + threshold level + threshold bool + end sales time + bump
         let rent = Rent::get()?;
         let rent_exempt_lamports = rent.minimum_balance(space);
         let lamports_to_transfer = available_lamports.checked_sub(rent_exempt_lamports).unwrap();
@@ -65,6 +67,8 @@ pub mod protected_mint {
 
         let (_config_account, config_account_bump) =
             Pubkey::find_program_address(&[b"config-seed".as_ref(), ctx.accounts.creator_address.key.as_ref()], ctx.program_id);
+
+        config_account.bump = config_account_bump;
 
         let authority_seeds = &[
             b"config-seed".as_ref(), 
@@ -125,7 +129,7 @@ pub mod protected_mint {
         let available_lamports = **config_account.to_account_info().lamports.borrow(); 
 
         //Available lamports excludes rent exemption
-        let space = 32 + 8 + 8 + 8 + 1 + 8 as usize; //Config Account: space = creator pubkey + sale price + quantity + threshold level + threshold bool + end sales time
+        let space = 8 + 32 + 8 + 8 + 8 + 1 + 8 + 1 as usize; //Config Account: space = discriminator + creator pubkey + sale price + quantity + threshold level + threshold bool + end sales time + bump
         let rent = Rent::get()?;
         let rent_exempt_lamports = rent.minimum_balance(space);
         let lamports_to_transfer = available_lamports.checked_sub(rent_exempt_lamports).unwrap();
@@ -203,7 +207,7 @@ pub mod protected_mint {
         let burn_cpi_accounts = Burn {
             to: nft_token_account.to_account_info().clone(),
             mint: nft_mint.to_account_info().clone(),
-            authority: user.clone(),
+            authority: user.to_account_info(),
         };
 
         let token_program = ctx.accounts.token_program.to_account_info();
@@ -235,7 +239,7 @@ pub mod protected_mint {
             ),
             &[
                 config_account.to_account_info().clone(),
-                ctx.accounts.user.clone(),
+                ctx.accounts.user.to_account_info(),
             ],
             &[authority_seeds],
 
@@ -248,6 +252,8 @@ pub mod protected_mint {
 
 #[derive(Accounts)]
 pub struct InitProtectionConfig<'info> {
+    #[account(mut)]
+    pub creator: Signer<'info>,
     #[account(
         init,
         seeds = [
@@ -256,23 +262,25 @@ pub struct InitProtectionConfig<'info> {
         ],
         bump,
         payer = creator,
-        space = 32 + 8 + 8 + 8 + 1 + 8
-        //space = creator pubkey + sale price + quantity + threshold level + threshold bool + end sales time
+        space = 8 + 32 + 8 + 8 + 8 + 1 + 8 + 1
+        //space = discriminator + creator pubkey + sale price + quantity + threshold level + threshold bool + end sales time + bump
     )]
     pub config_account: Account<'info, ProtectionConfig>,
-    #[account(mut, signer)]
-    /// CHECK: This is not dangerous because any one can create a ProtectionConfig
-    pub creator: AccountInfo<'info>,
     pub clock: Sysvar<'info, Clock>,
     pub system_program: Program<'info, System>, 
 }
 
 #[derive(Accounts)]
 pub struct ReleaseFunds<'info>{
-    #[account(mut, signer)]
-    /// CHECK: Already checked as signer?
-    pub creator_address: AccountInfo<'info>,
-    #[account(has_one = creator_address)] //check that the config_account passed in corresponds to the creator
+    #[account(mut)]
+    pub creator_address: Signer<'info>,
+    #[account(
+        has_one = creator_address,
+        seeds = [
+            b"config-seed".as_ref(),
+            creator_address.key.as_ref()
+        ],
+         bump = config_account.bump)] //check that the config_account passed in corresponds to the creator
     pub config_account: Account<'info, ProtectionConfig>,
     pub clock: Sysvar<'info, Clock>,
     pub system_program: Program<'info, System>,
@@ -280,9 +288,8 @@ pub struct ReleaseFunds<'info>{
 
 #[derive(Accounts)]
 pub struct RequestRefund<'info>{
-    #[account(mut, signer)]
-    /// CHECK: Already checked as signer?
-    pub user: AccountInfo<'info>,
+    #[account(mut)]
+    pub user: Signer<'info>,
     pub config_account: Account<'info, ProtectionConfig>,
     pub nft_mint: Account<'info, Mint>,
     pub nft_token_account: Account<'info, TokenAccount>,
@@ -304,6 +311,7 @@ pub struct ProtectionConfig {
     threshold_level: u64,
     threshold_met: bool,
     end_sales_time: i64,
+    bump: u8,
 }
 
 #[error_code]
