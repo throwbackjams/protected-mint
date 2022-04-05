@@ -176,31 +176,11 @@ pub mod protected_mint {
             1 as u64,
         )?;
         
-        //Derive config account PDA and transfer sales_price to the user signer
-
-        let (_config_account, config_account_bump) =
-            Pubkey::find_program_address(&[b"config-seed".as_ref(), expected_creator.as_ref()], ctx.program_id);
-
-        let authority_seeds = &[
-            b"config-seed".as_ref(), 
-            expected_creator.as_ref(), 
-            &[config_account_bump]];
+        //Transfer sales_price to the user signer
         
         let sales_price = config_account.sale_price;
-
-        anchor_lang::solana_program::program::invoke_signed(
-            &anchor_lang::solana_program::system_instruction::transfer(
-                config_account.to_account_info().key,
-                ctx.accounts.user.key,
-                sales_price,
-            ),
-            &[
-                config_account.to_account_info().clone(),
-                ctx.accounts.user.to_account_info(),
-            ],
-            &[authority_seeds],
-
-        )?;
+        **config_account.to_account_info().try_borrow_mut_lamports()? -= sales_price;
+        **user.to_account_info().try_borrow_mut_lamports()? += sales_price;
 
         Ok(())
     }

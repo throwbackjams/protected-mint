@@ -84,7 +84,7 @@ describe("protected-mint", () => {
   });
 
   it("Releases funds to creator upon meeting threshold", async() => {
-    //TODO
+    
     console.log("Testing release funds to creator...");
     const creatorBalanceBefore = await provider.connection.getBalance(creator.publicKey) / LAMPORTS_PER_SOL
     console.log("Creator SOL balance before", creatorBalanceBefore);
@@ -138,19 +138,18 @@ describe("protected-mint", () => {
 
   });
 
+  it("Unathorized creator cannot release funds", async() => {
+    //TODO
+  });
+
   it("Processes refund for verified holder if threshold not met", async() => {
     //TODO
   });
 
-  it("Verifies release funds & refund restricted before end of sales time", async() => {
-    //TODO
-  });
 
   it("Denies refund for unverified holder", async() => {
     //TODO
   });
 
-  it("Unathorized creator cannot release funds", async() => {
-    //TODO
-  });
+
 });
