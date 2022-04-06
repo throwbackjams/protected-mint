@@ -123,7 +123,8 @@ pub mod protected_mint {
         let (master_edition_key, _master_edition_seed) =
             Pubkey::find_program_address(master_edition_seed, ctx.accounts.token_metadata_program.key);
 
-        assert_eq!(master_edition_key, ctx.accounts.nft_mint.key());
+        //TOOD: Verify that the correct comparison is to th token account key and not the mint account key
+        assert_eq!(master_edition_key, ctx.accounts.nft_token_account.key());
 
         //Check that the metadata account derived from the passed-in NFT mint account matches the passed-in metadata account
         let nft_metadata_account = &ctx.accounts.nft_metadata_account;
@@ -150,13 +151,17 @@ pub mod protected_mint {
 
         let expected_creator = config_account.creator_address;
 
-        //Check that the updateAuthority field on the NFT metadata matches the creator of the ProtectionConfig Account
-        //Assumes that the creator address in the second position is the main address (since the first address is the Candy Machine per Metaplex Docs)
-        //Note: In a production version, better to check for "verified" creator and ensure projects verify their collections
+        //Check that the creator address field on the NFT metadata matches the creator of the ProtectionConfig Account
+        //Assumes that the creator address in the second position is the main address
+        //(since the first address is the Candy Machine per Metaplex Docs)
         assert_eq!(
             full_metadata_clone.data.creators.as_ref().unwrap()[1].address,
             expected_creator
         );
+
+        if !full_metadata_clone.data.creators.as_ref().unwrap()[1].verified {
+            return Err(ErrorCode::NFTMetadataCreatorNotVerified.into());
+        }
 
         //User signer burns the NFT?
         let nft_mint = &ctx.accounts.nft_mint;
@@ -266,6 +271,8 @@ pub enum ErrorCode{
     InsufficientFunds,
     #[msg("NFT Metadata Account is empty")]
     NFTMetadataEmpty,
+    #[msg("The creator in the NFT's metadata is unverified. Creator must sign the collection via Metaplex to verify")]
+    NFTMetadataCreatorNotVerified
 }
 
 fn future_end_time<'info>(ctx: &Context<InitProtectionConfig<'info>>, end_sales_time: i64) -> Result<()> {
